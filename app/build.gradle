@@ -1,13 +1,15 @@
-apply plugin: 'com.android.application'
+plugins {
+    id 'com.android.application'
+}
 
 android {
     namespace 'com.example.subtitlefixer'
-    compileSdk 33
+    compileSdk 34
 
     defaultConfig {
         applicationId "com.example.subtitlefixer"
         minSdk 21
-        targetSdk 33
+        targetSdk 34
         versionCode 1
         versionName "1.0"
     }
