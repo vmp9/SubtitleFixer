@@ -171,7 +171,7 @@ public class MainActivity extends Activity {
             public void run() {
                 try {
                     OutputStream outputStream = getContentResolver().openOutputStream(uri);
-                    BufferedWriter writer = new BufferedWriter(OutputStreamWriter(outputStream));
+                    BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(outputStream));
 
                     for (Subtitle s : loadedSubtitles) {
                         writer.write(s.index + "\n");
