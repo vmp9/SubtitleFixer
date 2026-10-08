@@ -21,10 +21,8 @@ import java.util.List;
 public class MainActivity extends Activity {
 
     private static final int REQ_OPEN_FILE = 1001;
-    private static final int REQ_SAVE_FILE = 1002;
 
     private TextView tvStatus;
-    private List<Subtitle> loadedSubtitles = new ArrayList<>();
 
     static class Subtitle {
         int index;
@@ -51,9 +49,11 @@ public class MainActivity extends Activity {
         btnSelectFile.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
+                // Request read/write access to the selected file
                 Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
                 intent.addCategory(Intent.CATEGORY_OPENABLE);
                 intent.setType("*/*");
+                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
                 startActivityForResult(intent, REQ_OPEN_FILE);
             }
         });
@@ -65,29 +65,31 @@ public class MainActivity extends Activity {
 
         if (resultCode == RESULT_OK && data != null && data.getData() != null) {
             Uri uri = data.getData();
-
             if (requestCode == REQ_OPEN_FILE) {
-                processInputFile(uri);
-            } else if (requestCode == REQ_SAVE_FILE) {
-                saveFixedSubtitles(uri);
+                processAndOverwriteOriginal(uri);
             }
         }
     }
 
-    private void processInputFile(Uri uri) {
+    private void processAndOverwriteOriginal(final Uri uri) {
         new Thread(new Runnable() {
             @Override
             public void run() {
                 try {
-                    final List<Subtitle> list = parseSrtUri(uri);
+                    // Step 1: Read and parse the original file
+                    List<Subtitle> list = parseSrtUri(uri);
+
+                    // Step 2: Fix the overlaps in memory
                     fixOverlap(list);
-                    loadedSubtitles = list;
+
+                    // Step 3: Overwrite the original file in-place using "wt" (write-truncate) mode
+                    overwriteSrtUri(uri, list);
 
                     runOnUiThread(new Runnable() {
                         @Override
                         public void run() {
-                            tvStatus.setText("Parsed " + list.size() + " subtitles.\nSelect save location.");
-                            promptSaveFile();
+                            tvStatus.setText("Successfully fixed and overwrote the original file!");
+                            Toast.makeText(MainActivity.this, "Original file updated!", Toast.LENGTH_LONG).show();
                         }
                     });
                 } catch (final Exception e) {
@@ -95,7 +97,7 @@ public class MainActivity extends Activity {
                         @Override
                         public void run() {
                             tvStatus.setText("Error: " + e.getMessage());
-                            Toast.makeText(MainActivity.this, "Failed to parse file", Toast.LENGTH_SHORT).show();
+                            Toast.makeText(MainActivity.this, "Failed to update file", Toast.LENGTH_SHORT).show();
                         }
                     });
                 }
@@ -157,46 +159,17 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void promptSaveFile() {
-        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
-        intent.addCategory(Intent.CATEGORY_OPENABLE);
-        intent.setType("application/x-subrip");
-        intent.putExtra(Intent.EXTRA_TITLE, "fixed_subtitles.srt");
-        startActivityForResult(intent, REQ_SAVE_FILE);
-    }
+    private void overwriteSrtUri(Uri uri, List<Subtitle> list) throws Exception {
+        // "wt" mode clears the existing file content and writes the updated content directly
+        OutputStream outputStream = getContentResolver().openOutputStream(uri, "wt");
+        BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(outputStream));
 
-    private void saveFixedSubtitles(final Uri uri) {
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    OutputStream outputStream = getContentResolver().openOutputStream(uri);
-                    BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(outputStream));
-
-                    for (Subtitle s : loadedSubtitles) {
-                        writer.write(s.index + "\n");
-                        writer.write(s.start + " --> " + s.end + "\n");
-                        writer.write(s.text + "\n\n");
-                    }
-                    writer.flush();
-                    writer.close();
-
-                    runOnUiThread(new Runnable() {
-                        @Override
-                        public void run() {
-                            tvStatus.setText("File successfully fixed and saved!");
-                            Toast.makeText(MainActivity.this, "Saved!", Toast.LENGTH_LONG).show();
-                        }
-                    });
-                } catch (final Exception e) {
-                    runOnUiThread(new Runnable() {
-                        @Override
-                        public void run() {
-                            tvStatus.setText("Error saving: " + e.getMessage());
-                        }
-                    });
-                }
-            }
-        }).start();
+        for (Subtitle s : list) {
+            writer.write(s.index + "\n");
+            writer.write(s.start + " --> " + s.end + "\n");
+            writer.write(s.text + "\n\n");
+        }
+        writer.flush();
+        writer.close();
     }
 }
