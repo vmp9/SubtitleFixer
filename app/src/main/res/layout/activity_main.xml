@@ -3,22 +3,20 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:padding="24dp"
-    android:gravity="center">
+    android:padding="16dp">
 
     <TextView
         android:id="@+id/tvStatus"
-        android:layout_width="wrap_content"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Select an SRT file to fix overlaps"
-        android:textSize="16sp"
+        android:text="Tap any SRT file to fix and overwrite it (Sorted by Newest First)"
+        android:textSize="15sp"
         android:gravity="center"
-        android:layout_marginBottom="24dp" />
+        android:paddingBottom="12dp" />
 
-    <Button
-        android:id="@+id/btnSelectFile"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Select SRT File" />
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/recyclerView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
 
 </LinearLayout>

@@ -1,28 +1,47 @@
 package com.example.subtitlefixer;
 
-import android.app.Activity;
+import android.Manifest;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
+import android.provider.Settings;
+import android.view.LayoutInflater;
 import android.view.View;
-import android.widget.Button;
+import android.view.ViewGroup;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.annotation.NonNull;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
+
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
-import java.io.InputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.InputStreamReader;
-import java.io.OutputStream;
 import java.io.OutputStreamWriter;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 
-public class MainActivity extends Activity {
-
-    private static final int REQ_OPEN_FILE = 1001;
+public class MainActivity extends AppCompatActivity {
 
     private TextView tvStatus;
+    private RecyclerView recyclerView;
+    private FileAdapter adapter;
+    private List<File> srtFiles = new ArrayList<>();
 
     static class Subtitle {
         int index;
@@ -43,53 +62,118 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        tvStatus = (TextView) findViewById(R.id.tvStatus);
-        Button btnSelectFile = (Button) findViewById(R.id.btnSelectFile);
+        tvStatus = findViewById(R.id.tvStatus);
+        recyclerView = findViewById(R.id.recyclerView);
+        recyclerView.setLayoutManager(new LinearLayoutManager(this));
 
-        btnSelectFile.setOnClickListener(new View.OnClickListener() {
+        adapter = new FileAdapter(srtFiles, new FileAdapter.OnItemClickListener() {
             @Override
-            public void onClick(View v) {
-                // Request read/write access to the selected file
-                Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-                intent.addCategory(Intent.CATEGORY_OPENABLE);
-                intent.setType("*/*");
-                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
-                startActivityForResult(intent, REQ_OPEN_FILE);
+            public void onItemClick(File file) {
+                processAndOverwriteOriginal(file);
             }
         });
+        recyclerView.setAdapter(adapter);
+
+        checkAndRequestPermissions();
     }
 
     @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
+    protected void onResume() {
+        super.onResume();
+        if (hasStoragePermission()) {
+            loadSrtFilesSortedByDate();
+        }
+    }
 
-        if (resultCode == RESULT_OK && data != null && data.getData() != null) {
-            Uri uri = data.getData();
-            if (requestCode == REQ_OPEN_FILE) {
-                processAndOverwriteOriginal(uri);
+    private boolean hasStoragePermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            return Environment.isExternalStorageManager();
+        } else {
+            return ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
+        }
+    }
+
+    private void checkAndRequestPermissions() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (!Environment.isExternalStorageManager()) {
+                Intent intent = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
+                intent.setData(Uri.parse("package:" + getPackageName()));
+                startActivity(intent);
+            } else {
+                loadSrtFilesSortedByDate();
+            }
+        } else {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE}, 101);
+            } else {
+                loadSrtFilesSortedByDate();
             }
         }
     }
 
-    private void processAndOverwriteOriginal(final Uri uri) {
+    private void loadSrtFilesSortedByDate() {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                final List<File> foundFiles = new ArrayList<>();
+                File downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+                scanDirectory(downloadsDir, foundFiles);
+
+                // SORT BY LAST MODIFIED (NEWEST FIRST)
+                Collections.sort(foundFiles, new Comparator<File>() {
+                    @Override
+                    public int compare(File f1, File f2) {
+                        return Long.compare(f2.lastModified(), f1.lastModified());
+                    }
+                });
+
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        srtFiles.clear();
+                        srtFiles.addAll(foundFiles);
+                        adapter.notifyDataSetChanged();
+                        if (srtFiles.isEmpty()) {
+                            tvStatus.setText("No .srt files found in Downloads folder.");
+                        } else {
+                            tvStatus.setText("Found " + srtFiles.size() + " files (Sorted: Newest First).\nTap to fix overlaps:");
+                        }
+                    }
+                });
+            }
+        }).start();
+    }
+
+    private void scanDirectory(File dir, List<File> foundFiles) {
+        if (dir != null && dir.exists() && dir.isDirectory()) {
+            File[] files = dir.listFiles();
+            if (files != null) {
+                for (File file : files) {
+                    if (file.isDirectory()) {
+                        scanDirectory(file, foundFiles);
+                    } else if (file.getName().toLowerCase().endsWith(".srt")) {
+                        foundFiles.add(file);
+                    }
+                }
+            }
+        }
+    }
+
+    private void processAndOverwriteOriginal(final File file) {
         new Thread(new Runnable() {
             @Override
             public void run() {
                 try {
-                    // Step 1: Read and parse the original file
-                    List<Subtitle> list = parseSrtUri(uri);
-
-                    // Step 2: Fix the overlaps in memory
+                    List<Subtitle> list = parseSrtFile(file);
                     fixOverlap(list);
-
-                    // Step 3: Overwrite the original file in-place using "wt" (write-truncate) mode
-                    overwriteSrtUri(uri, list);
+                    overwriteSrtFile(file, list);
 
                     runOnUiThread(new Runnable() {
                         @Override
                         public void run() {
-                            tvStatus.setText("Successfully fixed and overwrote the original file!");
-                            Toast.makeText(MainActivity.this, "Original file updated!", Toast.LENGTH_LONG).show();
+                            tvStatus.setText("Updated: " + file.getName());
+                            Toast.makeText(MainActivity.this, "Overwrote original file!", Toast.LENGTH_SHORT).show();
+                            loadSrtFilesSortedByDate();
                         }
                     });
                 } catch (final Exception e) {
@@ -97,7 +181,6 @@ public class MainActivity extends Activity {
                         @Override
                         public void run() {
                             tvStatus.setText("Error: " + e.getMessage());
-                            Toast.makeText(MainActivity.this, "Failed to update file", Toast.LENGTH_SHORT).show();
                         }
                     });
                 }
@@ -105,10 +188,9 @@ public class MainActivity extends Activity {
         }).start();
     }
 
-    private List<Subtitle> parseSrtUri(Uri uri) throws Exception {
+    private List<Subtitle> parseSrtFile(File file) throws Exception {
         List<Subtitle> list = new ArrayList<>();
-        InputStream inputStream = getContentResolver().openInputStream(uri);
-        BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream));
+        BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(file)));
 
         List<String> lines = new ArrayList<>();
         String line;
@@ -159,10 +241,8 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void overwriteSrtUri(Uri uri, List<Subtitle> list) throws Exception {
-        // "wt" mode clears the existing file content and writes the updated content directly
-        OutputStream outputStream = getContentResolver().openOutputStream(uri, "wt");
-        BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(outputStream));
+    private void overwriteSrtFile(File file, List<Subtitle> list) throws Exception {
+        BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(file, false)));
 
         for (Subtitle s : list) {
             writer.write(s.index + "\n");
@@ -171,5 +251,56 @@ public class MainActivity extends Activity {
         }
         writer.flush();
         writer.close();
+    }
+
+    // RecyclerView Adapter for listing files
+    static class FileAdapter extends RecyclerView.Adapter<FileAdapter.ViewHolder> {
+        interface OnItemClickListener {
+            void onItemClick(File file);
+        }
+
+        private final List<File> files;
+        private final OnItemClickListener listener;
+        private final SimpleDateFormat dateFormat = new SimpleDateFormat("MMM dd, yyyy HH:mm", Locale.getDefault());
+
+        FileAdapter(List<File> files, OnItemClickListener listener) {
+            this.files = files;
+            this.listener = listener;
+        }
+
+        @NonNull
+        @Override
+        public ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+            View view = LayoutInflater.from(parent.getContext()).inflate(android.R.layout.simple_list_item_2, parent, false);
+            return new ViewHolder(view);
+        }
+
+        @Override
+        public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
+            final File file = files.get(position);
+            holder.text1.setText(file.getName());
+            holder.text2.setText("Modified: " + dateFormat.format(new Date(file.lastModified())));
+            holder.itemView.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    listener.onItemClick(file);
+                }
+            });
+        }
+
+        @Override
+        public int getItemCount() {
+            return files.size();
+        }
+
+        static class ViewHolder extends RecyclerView.ViewHolder {
+            TextView text1, text2;
+
+            ViewHolder(View itemView) {
+                super(itemView);
+                text1 = itemView.findViewById(android.R.id.text1);
+                text2 = itemView.findViewById(android.R.id.text2);
+            }
+        }
     }
 }
