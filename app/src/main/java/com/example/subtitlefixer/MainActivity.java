@@ -271,7 +271,7 @@ public class MainActivity extends AppCompatActivity {
         @NonNull
         @Override
         public ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
-            View view = LayoutInflater.from(parent.getContext()).inflate(android.R.layout.simple_list_item_2, parent, false);
+            View view = LayoutInflater.from(parent.getContext()).inflate(R.layout.item_file, parent, false);
             return new ViewHolder(view);
         }
 
@@ -288,18 +288,13 @@ public class MainActivity extends AppCompatActivity {
             });
         }
 
-        @Override
-        public int getItemCount() {
-            return files.size();
-        }
-
         static class ViewHolder extends RecyclerView.ViewHolder {
             TextView text1, text2;
 
             ViewHolder(View itemView) {
                 super(itemView);
-                text1 = itemView.findViewById(android.R.id.text1);
-                text2 = itemView.findViewById(android.R.id.text2);
+                text1 = itemView.findViewById(R.id.tvFileName);
+                text2 = itemView.findViewById(R.id.tvFileDate);
             }
         }
     }

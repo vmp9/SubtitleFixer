@@ -3,20 +3,24 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:padding="16dp">
+    android:background="#F5F5F5">
 
     <TextView
         android:id="@+id/tvStatus"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Tap any SRT file to fix and overwrite it (Sorted by Newest First)"
-        android:textSize="15sp"
+        android:background="#E0E0E0"
         android:gravity="center"
-        android:paddingBottom="12dp" />
+        android:padding="14dp"
+        android:text="Found files (Sorted: Newest First).\nTap any file to fix overlaps:"
+        android:textColor="#222222"
+        android:textSize="14sp"
+        android:textStyle="bold" />
 
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/recyclerView"
         android:layout_width="match_parent"
-        android:layout_height="match_parent" />
+        android:layout_height="match_parent"
+        android:padding="8dp" />
 
 </LinearLayout>
