@@ -288,6 +288,11 @@ public class MainActivity extends AppCompatActivity {
             });
         }
 
+        @Override
+        public int getItemCount() {
+            return files.size();
+        }
+
         static class ViewHolder extends RecyclerView.ViewHolder {
             TextView text1, text2;
 
